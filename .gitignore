@@ -3,5 +3,7 @@ __pycache__/
 20180402-114759/
 log/
 align/__pycache__/
-train_dir\emb_img\
-train_dir\test_img\
+train_dir/emb_img/
+train_dir/test_img/
+test.py
+get_image.py
