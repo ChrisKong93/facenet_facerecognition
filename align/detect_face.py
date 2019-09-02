@@ -30,7 +30,6 @@ from __future__ import print_function
 import os
 
 # from math import floor
-from PIL import Image
 import cv2
 import numpy as np
 from six import iteritems, string_types
