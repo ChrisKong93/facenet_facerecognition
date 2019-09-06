@@ -363,10 +363,11 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
         im_data = (im_data - 127.5) * 0.0078125
         img_x = np.expand_dims(im_data, 0)
         img_y = np.transpose(img_x, (0, 2, 1, 3))
-
+        # print(img_y.shape)
         out = pnet(img_y)
         out0 = np.transpose(out[0], (0, 2, 1, 3))
         out1 = np.transpose(out[1], (0, 2, 1, 3))
+
 
         boxes, _ = generateBoundingBox(out1[0, :, :, 1].copy(), out0[0, :, :, :].copy(), scale, threshold[0])
 
@@ -404,6 +405,7 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
                 return np.empty()
         tempimg = (tempimg - 127.5) * 0.0078125
         tempimg1 = np.transpose(tempimg, (3, 1, 0, 2))
+
         out = rnet(tempimg1)
         out0 = np.transpose(out[0])
         out1 = np.transpose(out[1])
