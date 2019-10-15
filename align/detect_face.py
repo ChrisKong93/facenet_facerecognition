@@ -135,18 +135,7 @@ class Network(object):
         assert padding in ('SAME', 'VALID')
 
     @layer
-    def conv(self,
-             inp,
-             k_h,
-             k_w,
-             c_o,
-             s_h,
-             s_w,
-             name,
-             relu=True,
-             padding='SAME',
-             group=1,
-             biased=True):
+    def conv(self, inp, k_h, k_w, c_o, s_h, s_w, name, relu=True, padding='SAME', group=1, biased=True):
         # Verify that the padding is acceptable
         self.validate_padding(padding)
         # Get the number of channels in the input
@@ -361,6 +350,8 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
         # cv2.waitKey()
 
         im_data = (im_data - 127.5) * 0.0078125
+        # print(im_data)
+        # exit()
         img_x = np.expand_dims(im_data, 0)
         img_y = np.transpose(img_x, (0, 2, 1, 3))
         # print(img_y.shape)
@@ -368,10 +359,17 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
         out0 = np.transpose(out[0], (0, 2, 1, 3))
         out1 = np.transpose(out[1], (0, 2, 1, 3))
 
-
+        # 选取map中大于人脸阀值的点，映射到原图片的窗口大小，默认map中的一个点对应输入图中的12 * 12的窗口，最后要根据缩放比例映射到原图。
         boxes, _ = generateBoundingBox(out1[0, :, :, 1].copy(), out0[0, :, :, :].copy(), scale, threshold[0])
 
         # inter-scale nms
+        '''
+　　　　　NMS (Non-Maximum Suppression)：在上述生成的 bb 中，找出判定为人脸概率最大的那个 bb，计算出这个 bb 的面积，
+　　　　　然后计算其余 bb 与这个 bb 重叠面积的大小，用重叠面积除以：(Min) 两个 bb 中面积较小者；(Union) 两个 bb 的总和面积。
+　　　　　如果这个值大于 threshold，那么就认为这两个 bb 框的是同一个地方，舍弃判定概率小的；
+　　　　　如果小于 threshold，则认为两个 bb 框的是不同地方，保留判定概率小的。重复上述过程直至所有 bb 都遍历完成。
+　　　　　将图片按照所有的 scale 处理过一遍后，会得到在原图上基于不同 scale 的所有的 bb，然后对这些 bb 再进行一次 NMS，并且这次 NMS 的 threshold 要提高。
+        '''
         pick = nms(boxes.copy(), 0.5, 'Union')
         if boxes.size > 0 and pick.size > 0:
             boxes = boxes[pick, :]
@@ -381,16 +379,18 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
     if numbox > 0:
         pick = nms(total_boxes.copy(), 0.7, 'Union')
         total_boxes = total_boxes[pick, :]
+        # 校准bb,得到了真真正正的在原图上 bb 的坐标
         regw = total_boxes[:, 2] - total_boxes[:, 0]
         regh = total_boxes[:, 3] - total_boxes[:, 1]
         qq1 = total_boxes[:, 0] + total_boxes[:, 5] * regw
         qq2 = total_boxes[:, 1] + total_boxes[:, 6] * regh
         qq3 = total_boxes[:, 2] + total_boxes[:, 7] * regw
         qq4 = total_boxes[:, 3] + total_boxes[:, 8] * regh
+        # 依次为修正后的左上角，右下角坐标及该部分得分
         total_boxes = np.transpose(np.vstack([qq1, qq2, qq3, qq4, total_boxes[:, 4]]))
-        total_boxes = rerec(total_boxes.copy())
-        total_boxes[:, 0:4] = np.fix(total_boxes[:, 0:4]).astype(np.int32)
-        dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph = pad(total_boxes.copy(), w, h)
+        total_boxes = rerec(total_boxes.copy())  # 调整成正方形
+        total_boxes[:, 0:4] = np.fix(total_boxes[:, 0:4]).astype(np.int32)  # 取整
+        dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph = pad(total_boxes.copy(), w, h)  # 把超过原图边界的坐标剪裁一下
 
     numbox = total_boxes.shape[0]
     if numbox > 0:
@@ -410,14 +410,15 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
         out0 = np.transpose(out[0])
         out1 = np.transpose(out[1])
         score = out1[1, :]
+        # 第一步中筛选出的预测框坐标。此时的坐标为原图中的坐标偏移，并非resize之后的坐标偏置。即直接将偏移加到原图中坐标即可
         ipass = np.where(score > threshold[1])
         total_boxes = np.hstack([total_boxes[ipass[0], 0:4].copy(), np.expand_dims(score[ipass].copy(), 1)])
-        mv = out0[:, ipass[0]]
+        mv = out0[:, ipass[0]]  # 第二步得出的偏移值
         if total_boxes.shape[0] > 0:
             pick = nms(total_boxes, 0.7, 'Union')
             total_boxes = total_boxes[pick, :]
-            total_boxes = bbreg(total_boxes.copy(), np.transpose(mv[:, pick]))
-            total_boxes = rerec(total_boxes.copy())
+            total_boxes = bbreg(total_boxes.copy(), np.transpose(mv[:, pick]))  # 加偏移后的坐标
+            total_boxes = rerec(total_boxes.copy())  # 变为正方形
 
     numbox = total_boxes.shape[0]
     if numbox > 0:
@@ -432,7 +433,7 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
                 tempimg[:, :, :, k] = imresample(tmp, (48, 48))
             else:
                 return np.empty()
-        tempimg = (tempimg - 127.5) * 0.0078125
+        tempimg = (tempimg - 127.5) * 0.0078125  # /128
         tempimg1 = np.transpose(tempimg, (3, 1, 0, 2))
         out = onet(tempimg1)
         out0 = np.transpose(out[0])
@@ -698,6 +699,7 @@ def bbreg(boundingbox, reg):
     return boundingbox
 
 
+# 选取map中大于人脸阀值的点，映射到原图片的窗口大小，默认map中的一个点对应输入图中的12*12的窗口，最后要根据缩放比例映射到原图。
 def generateBoundingBox(imap, reg, scale, t):
     """Use heatmap to generate bounding boxes"""
     stride = 2
@@ -727,22 +729,29 @@ def generateBoundingBox(imap, reg, scale, t):
 
 # function pick = nms(boxes,threshold,type)
 def nms(boxes, threshold, method):
+    # 输入为空，则直接返回
     if boxes.size == 0:
         return np.empty((0, 3))
+    # 依次取出左上角和右下角坐标以及分类器得分(置信度)
     x1 = boxes[:, 0]
     y1 = boxes[:, 1]
     x2 = boxes[:, 2]
     y2 = boxes[:, 3]
     s = boxes[:, 4]
+    # 计算每一个框的面积
     area = (x2 - x1 + 1) * (y2 - y1 + 1)
+    # 将得分升序排列
     I = np.argsort(s)
+    # 初始化
     pick = np.zeros_like(s, dtype=np.int16)
     counter = 0
+    # 循环直至所有框处理完成
     while I.size > 0:
-        i = I[-1]
+        i = I[-1]  # 选中最后一个，即得分最高的框
         pick[counter] = i
         counter += 1
         idx = I[0:-1]
+        # 计算相交面积
         xx1 = np.maximum(x1[i], x1[idx])
         yy1 = np.maximum(y1[i], y1[idx])
         xx2 = np.minimum(x2[i], x2[idx])
@@ -750,10 +759,14 @@ def nms(boxes, threshold, method):
         w = np.maximum(0.0, xx2 - xx1 + 1)
         h = np.maximum(0.0, yy2 - yy1 + 1)
         inter = w * h
+        # 不同定义下的IOU
         if method is 'Min':
+            # 重叠面积与最小框面积的比值
             o = inter / np.minimum(area[i], area[idx])
         else:
+            # 交集 / 并集
             o = inter / (area[i] + area[idx] - inter)
+        # 保留所有重叠面积小于阈值的框，留作下次处理
         I = I[np.where(o <= threshold)]
     pick = pick[0:counter]
     return pick

@@ -145,8 +145,49 @@ def main():
             # When everything is done, release the capture
             capture.release()
             cv2.destroyWindow("camera")
-
         # When everything is done, release the capture
+
+
+def test(path):
+    with tf.Graph().as_default():
+        with tf.Session() as sess:
+            # Load the model
+            # 这里要改为自己的模型位置
+            model = './20170512-110547/'
+            # model = './20180402-114759/'
+            facenet.load_model(model)
+
+            # Get input and output tensors
+            images_placeholder = tf.get_default_graph().get_tensor_by_name("input:0")
+            embeddings = tf.get_default_graph().get_tensor_by_name("embeddings:0")
+            phase_train_placeholder = tf.get_default_graph().get_tensor_by_name("phase_train:0")
+
+            starttime = time.time()
+            frame = cv2.imread(path)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # 获取 判断标识 bounding_box crop_image
+            for index in range(1):
+                mark, bounding_box, crop_image = load_and_align_data(rgb_frame, 160, 44)
+
+                if (1):
+                    # print(timer)
+                    if (mark):
+                        feed_dict = {images_placeholder: crop_image, phase_train_placeholder: False}
+                        emb = sess.run(embeddings, feed_dict=feed_dict)
+                        temp_num = len(emb)
+
+                        # 在frame上绘制边框和文字
+                        for rec_position in range(temp_num):
+                            cv2.rectangle(frame, (bounding_box[rec_position, 0], bounding_box[rec_position, 1]),
+                                          (bounding_box[rec_position, 2], bounding_box[rec_position, 3]),
+                                          (0, 255, 0),
+                                          2, 8, 0)
+                cv2.imshow('camera', frame)
+                key = cv2.waitKey(0)
+                stoptime = time.time()
+                print('usetime:', str(stoptime - starttime))
+            cv2.destroyWindow("camera")
 
 
 # 创建load_and_align_data网络
@@ -205,4 +246,6 @@ def load_and_align_data(img, image_size, margin):
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+    path = 'D:/WorkSpace/C++/mtcnn-C++/mtcnn/mtcnn/4.jpg'
+    test(path)
