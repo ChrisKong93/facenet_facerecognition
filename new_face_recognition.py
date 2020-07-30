@@ -1,20 +1,29 @@
+# encoding: utf8
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from multiprocessing import Process, Queue
 import os
+# from queue import Queue
+import threading
 import time
 
-import align.detect_face
 import cv2
+from flask import Flask, Response
 import numpy as np
 from scipy import misc
 import tensorflow as tf
 
+import RTSCapture
+import align.detect_face
 import facenet
 
+app = Flask(__name__)
+mq = Queue()
 
-def main():
+
+def main(video, q):
     with tf.Graph().as_default():
         with tf.Session() as sess:
             # Load the model 
@@ -42,26 +51,36 @@ def main():
                 nrof_images = nrof_images + 1
 
             images = np.stack(image)
+            # print(images)
             feed_dict = {images_placeholder: images, phase_train_placeholder: False}
             compare_emb = sess.run(embeddings, feed_dict=feed_dict)
+
             compare_num = len(compare_emb)
 
             # 开启ip摄像头
-            video = "http://admin:admin@192.168.0.107:8081/"  # 此处@后的ipv4 地址需要修改为自己的地址
-            # 参数为0表示打开内置摄像头，参数是视频文件路径则打开视频
-            # capture =cv2.VideoCapture(video)
-            capture = cv2.VideoCapture(0)
-            cv2.namedWindow("camera", 1)
+            # video = "http://admin:admin@192.168.0.107:8081/"  # 此处@后的ipv4 地址需要修改为自己的地址
+            # video = 'rtsp://admin:admin@192.168.0.13:8554/live'  # 此处@后的ipv4 地址需要修改为自己的地址
+            # video = 'rtsp://admin:a1234567@192.168.8.2:554/h264/ch1/main/av_stream'  # 此处@后的ipv4 地址需要修改为自己的地址
+
+            # rtscap = RTSCapture.RTSCapture.create(0)
+            rtscap = RTSCapture.RTSCapture.create(video)
+            rtscap.start_read()  # 启动子线程并改变 read_latest_frame 的指向
             timer = 0
             fin_obj_temp = []
-            while True:
-                ret, frame = capture.read()
-                # frame = np.hstack((frame, frame))
-                # frame = np.vstack((frame, frame))
-                # frame = np.vstack((frame, frame))
-                # rgb frame np.ndarray 480*640*3
-                starttime = time.time()
 
+            # while True:
+            while rtscap.isStarted():
+                ret, frame = rtscap.read_latest_frame()
+                if cv2.waitKey(3) & 0xFF == ord('q'):
+                    print("esc break...")
+                    break
+                if not ret:
+                    continue
+                starttime = time.time()
+                # print(frame.shape)
+                frame = cv2.resize(frame, (int(frame.shape[1] / 2), int(frame.shape[0] / 2)))
+                # cv2.imshow('camera1', frame)
+                # frame = cv2.resize(frame, (640, 480))
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
                 # 获取 判断标识 bounding_box crop_image
@@ -73,11 +92,11 @@ def main():
                         if (mark):
                             feed_dict = {images_placeholder: crop_image, phase_train_placeholder: False}
                             emb = sess.run(embeddings, feed_dict=feed_dict)
+                            # print(emb.shape)
                             temp_num = len(emb)
-
+                            # print(emb)
                             fin_obj = []
                             print(all_obj)
-
                             # 为bounding_box 匹配标签
                             if timer % 1 == 0:
                                 for i in range(temp_num):
@@ -92,7 +111,7 @@ def main():
                                         fin_obj.append('unknow')
                                     else:
                                         fin_obj.append(all_obj[dist_list.index(min_value)].split('.')[0])
-                                print(fin_obj)
+                                # print(fin_obj)
                                 fin_obj_temp = fin_obj
                             else:
                                 fin_obj = fin_obj_temp
@@ -125,30 +144,46 @@ def main():
                                         thickness=2,
                                         lineType=2)
 
-                        # cv2.imshow('camera', frame)
-                cv2.imshow('camera', frame)
+                q.put(frame)
+                # cv2.imshow('camera', frame)
                 stoptime = time.time()
                 print('usetime:', str(stoptime - starttime))
-                # cv2.imshow('camera',frame)
-                key = cv2.waitKey(3)
-                if key == 27:
-                    # esc键退出
-                    print("esc break...")
-                    break
-
-            # if key == ord(' '):
-            #     # 保存一张图像
-            #     num = num+1
-            #     filename = "frames_%s.jpg" % num
-            #     cv2.imwrite(filename,frame)
 
             # When everything is done, release the capture
-            capture.release()
-            cv2.destroyWindow("camera")
+            rtscap.stop_read()
+            rtscap.release()
+            cv2.destroyAllWindows()
         # When everything is done, release the capture
 
 
-def test(path):
+def mtcnntest(path):
+    with tf.Graph().as_default():
+        with tf.Session() as sess:
+            # Get input and output tensors
+            starttime = time.time()
+            frame = cv2.imread(path)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # 获取 判断标识 bounding_box crop_image
+            for index in range(1):
+                mark, bounding_box, crop_image = load_and_align_data(rgb_frame, 160, 44)
+                if (1):
+                    # print(timer)
+                    if (mark):
+                        # 在frame上绘制边框和文字
+                        for rec_position in range(len(bounding_box)):
+                            cv2.rectangle(frame, (bounding_box[rec_position, 0], bounding_box[rec_position, 1]),
+                                          (bounding_box[rec_position, 2], bounding_box[rec_position, 3]),
+                                          (0, 255, 0),
+                                          2, 8, 0)
+                cv2.imshow('camera', frame)
+                key = cv2.waitKey(0)
+                stoptime = time.time()
+                print('usetime:', str(stoptime - starttime))
+            cv2.destroyWindow("camera")
+
+
+def facenettest(path):
     with tf.Graph().as_default():
         with tf.Session() as sess:
             # Load the model
@@ -162,32 +197,74 @@ def test(path):
             embeddings = tf.get_default_graph().get_tensor_by_name("embeddings:0")
             phase_train_placeholder = tf.get_default_graph().get_tensor_by_name("phase_train:0")
 
+            image = []
+            nrof_images = 0
+
+            # 这里要改为自己emb_img文件夹的位置
+            emb_dir = './train_dir/emb_img/'
+            all_obj = []
+            for i in os.listdir(emb_dir):
+                all_obj.append(i)
+                img = misc.imread(os.path.join(emb_dir, i), mode='RGB')
+                prewhitened = facenet.prewhiten(img)
+                image.append(prewhitened)
+                nrof_images = nrof_images + 1
+
+            images = np.stack(image)
+            feed_dict = {images_placeholder: images, phase_train_placeholder: False}
+            compare_emb = sess.run(embeddings, feed_dict=feed_dict)
+
+            print(compare_emb[0].shape)
+            print(compare_emb)
+            compare_num = len(compare_emb)
+
+            timer = 0
+            fin_obj_temp = []
+
             starttime = time.time()
             frame = cv2.imread(path)
+
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
             # 获取 判断标识 bounding_box crop_image
-            for index in range(1):
-                mark, bounding_box, crop_image = load_and_align_data(rgb_frame, 160, 44)
-
-                if (1):
-                    # print(timer)
-                    if (mark):
-                        feed_dict = {images_placeholder: crop_image, phase_train_placeholder: False}
-                        emb = sess.run(embeddings, feed_dict=feed_dict)
-                        temp_num = len(emb)
-
-                        # 在frame上绘制边框和文字
-                        for rec_position in range(temp_num):
-                            cv2.rectangle(frame, (bounding_box[rec_position, 0], bounding_box[rec_position, 1]),
-                                          (bounding_box[rec_position, 2], bounding_box[rec_position, 3]),
-                                          (0, 255, 0),
-                                          2, 8, 0)
-                cv2.imshow('camera', frame)
-                key = cv2.waitKey(0)
-                stoptime = time.time()
-                print('usetime:', str(stoptime - starttime))
-            cv2.destroyWindow("camera")
+            # for index in range(1):
+            mark, bounding_box, crop_image = load_and_align_data(rgb_frame, 160, 44)
+            # if type(crop_image) != int:
+            #     print('1111111111111111111111' + str(crop_image.shape))
+            timer += 1
+            if (1):
+                # print(timer)
+                if (mark):
+                    feed_dict = {images_placeholder: crop_image, phase_train_placeholder: False}
+                    emb = sess.run(embeddings, feed_dict=feed_dict)
+                    # print(emb.shape)
+                    temp_num = len(emb)
+                    # print(emb)
+                    fin_obj = []
+                    print(all_obj)
+                    # 为bounding_box 匹配标签
+                    if timer % 1 == 0:
+                        for i in range(temp_num):
+                            dist_list = []
+                            for j in range(compare_num):
+                                dist = np.sqrt(np.sum(np.square(np.subtract(emb[i, :], compare_emb[j, :]))))
+                                dist_list.append(dist)
+                            min_value = min(dist_list)
+                            print(dist_list)
+                            print(min_value)
+                            if (min_value > 0.85):
+                                fin_obj.append('unknow')
+                            else:
+                                fin_obj.append(all_obj[dist_list.index(min_value)].split('.')[0])
+                        # print(fin_obj)
+                        fin_obj_temp = fin_obj
+                    else:
+                        fin_obj = fin_obj_temp
+                    print(fin_obj_temp)
+                    print(len(fin_obj))
+            stoptime = time.time()
+            print('usetime:', str(stoptime - starttime))
+            # cv2.imshow('camera',frame)
 
 
 # 创建load_and_align_data网络
@@ -241,11 +318,38 @@ def load_and_align_data(img, image_size, margin):
 
     # np.stack 将crop由一维list变为二维
     crop_image = np.stack(crop)
-
     return 1, det, crop_image
 
 
+def gen():
+    while True:
+        if mq.empty() != True:
+            frame = mq.get()
+            ret, jpeg = cv2.imencode('.jpg', frame)
+            # 使用generator函数输出视频流， 每次请求输出的content类型是image/jpeg
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n\r\n')
+        else:
+            # print('continue')
+            continue
+
+
+@app.route('/video_feed/')  # 这个地址返回视频流响应
+def video_feed():
+    return Response(gen(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+def run_flask():
+    app.run(host="0.0.0.0", port=5000)
+
+
 if __name__ == '__main__':
-    # main()
-    path = 'D:/WorkSpace/C++/mtcnn-C++/mtcnn/mtcnn/4.jpg'
-    test(path)
+    # t1 = threading.Thread(target=main, args=("rtsp://admin:a1234567@192.168.8.2:554/h264/ch1/main/av_stream", q))
+    # t1 = threading.Thread(target=main, )
+    # t1.start()
+    # app.run(host="0.0.0.0", port=5000)
+    p1 = Process(target=main, args=('rtsp://admin:admin@192.168.0.13:8554/live', mq,))
+    p1.start()
+    run_flask()
+    # main('rtsp://admin:admin@192.168.0.13:8554/live', mq)

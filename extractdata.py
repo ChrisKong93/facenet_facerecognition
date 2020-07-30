@@ -5,24 +5,38 @@ def detect(data):
     a = data.tolist()
     print(a)
     exit()
+    i = 0
     for m in a:
-        print(a[m])
+        if i == 12:
+            print(m)
+            print(a[m])
+            exit()
+        i += 1
 
 
 def extract(data, net, filename):
     a = data.tolist()
+    # print(a)
     x = []
     for n in net:
-        for b in a:
+        # print(n)
+        # print(a[n])
+        for b in a[n]:
             # print(b)
-            # print(a[b])
-            if b == n:
-                for c in a[b]:
-                    # print(a[b][c].flatten())
-                    for d in a[b][c].flatten():
-                        # print(d)
-                        x.append(d)
-                break
+            # print(a[n][b].flatten())
+            for d in a[n][b].flatten():
+                print(d)
+                x.append(d)
+        # for b in a:
+        #     print(b)
+        #     print(a[b])
+        #     if b == n:
+        #         for c in a[b]:
+        #             print(c)
+        #             for d in a[b][c].flatten():
+        #                 print(d)
+        #                 x.append(d)
+        #         break
     for y in x:
         s = '[' + str(y) + ']'
         # print(s)
@@ -49,4 +63,6 @@ data3 = np.load('./align/det3.npy', allow_pickle=True, encoding="latin1")
 
 if __name__ == '__main__':
     detect(data1)
+    # run(filename='Pnet.txt')
+    # run(filename='Rnet.txt')
     # run(filename='Onet.txt')
