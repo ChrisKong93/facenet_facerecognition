@@ -26,7 +26,7 @@ def dection():
         print('loading...... :', file)
         img_path_set.append(single_img)
 
-    images = load_and_align_data(img_path_set, 160, 44, 1.0)
+    images = load_and_align_data(img_path_set, 160, 22, 1.0)
 
     # 改为emb_img文件夹的绝对路径
     emb_dir = './train_dir/emb_img/'
@@ -73,7 +73,37 @@ def load_and_align_data(image_paths, image_size, margin, gpu_memory_fraction):
         bb[1] = np.maximum(det[1] - margin / 2, 0)
         bb[2] = np.minimum(det[2] + margin / 2, img_size[1])
         bb[3] = np.minimum(det[3] + margin / 2, img_size[0])
-        cropped = img[bb[1]:bb[3], bb[0]:bb[2], :]
+        w = abs(bb[0] - bb[2])
+        h = abs(bb[1] - bb[3])
+        if w > h:
+            D = abs(w - h)
+            newx1 = int(bb[0])
+            newx2 = int(bb[2])
+            newy1 = int(bb[1] - D / 2)
+            newy2 = int(bb[3] + D / 2)
+            if newy1 < 0:
+                newy1 = 0
+            if newy2 > img.shape[0]:
+                newy2 = img.shape[0]
+                # img.shape[0]：图像的垂直尺寸（高度）
+                # img.shape[1]：图像的水平尺寸（宽度）
+                # img.shape[2]：图像的通道数
+        else:
+            D = abs(w - h)
+            newx1 = int(bb[0] - D / 2)
+            newx2 = int(bb[2] + D / 2)
+            newy1 = int(det[1])
+            newy2 = int(det[3])
+            if newx1 < 0:
+                newx1 = 0
+            if newx2 > img.shape[1]:
+                newx2 = img.shape[1]
+                # img.shape[0]：图像的垂直尺寸（高度）
+                # img.shape[1]：图像的水平尺寸（宽度）
+                # img.shape[2]：图像的通道数
+        print(newy1,newy2, newx1,newx2)
+        cropped = img[newy1:newy2, newx1:newx2, :]
+        # cropped = img[bb[1]:bb[3], bb[0]:bb[2], :]
 
         # 根据cropped位置对原图resize，并对新得的aligned进行白化预处理
         aligned = misc.imresize(cropped, (image_size, image_size), interp='bilinear')

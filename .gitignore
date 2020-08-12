@@ -7,6 +7,4 @@ train_dir/emb_img/
 train_dir/test_img/
 test.py
 get_image.py
-Pnet.txt
-Rnet.txt
-Onet.txt
+.idea/
